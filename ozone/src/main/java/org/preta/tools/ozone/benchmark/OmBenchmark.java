@@ -20,6 +20,7 @@ import org.preta.tools.ozone.OzoneVersionProvider;
 import org.preta.tools.ozone.benchmark.om.OmReadBenchmark;
 import org.preta.tools.ozone.benchmark.om.OmReadWriteBenchmark;
 import org.preta.tools.ozone.benchmark.om.OmWriteBenchmark;
+import org.preta.tools.ozone.benchmark.om.OmDeleteBenchmark;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
@@ -30,7 +31,8 @@ import picocli.CommandLine.Command;
     subcommands = {
         OmReadWriteBenchmark.class,
         OmReadBenchmark.class,
-        OmWriteBenchmark.class}
+        OmWriteBenchmark.class,
+        OmDeleteBenchmark.class}
         )
 public class OmBenchmark implements Runnable {
 
@@ -51,5 +53,4 @@ public class OmBenchmark implements Runnable {
   public static void main(String[] args) {
     System.exit(getInstance().execute(args));
   }
-
 }

@@ -16,6 +16,7 @@
 
 package org.preta.tools.ozone.benchmark.om;
 
+import org.apache.commons.lang3.StringUtils;
 import org.preta.tools.ozone.ReadableTimestampConverter;
 import org.preta.tools.ozone.benchmark.IoStats;
 import picocli.CommandLine.Command;
@@ -54,6 +55,10 @@ public class OmWriteBenchmark extends AbstractOmBenchmark
       description = "Ozone Bucket.")
   private String bucket;
 
+  @Option(names = {"-bl", "--bucketLimit"},
+      description = "Ozone Bucket Limit.")
+  private int bucketLimit;
+
   @Option(names = {"-p", "--keyPrefix"},
       description = "Key Prefix.")
   private String keyNamePrefix;
@@ -61,6 +66,14 @@ public class OmWriteBenchmark extends AbstractOmBenchmark
   @Option(names = {"-w", "--numWriteThreads"},
       description = "Number of writer threads.")
   private int writerThreads;
+
+  @Option(names = {"-s", "--startIndex"},
+      description = "Key Suffix Start Index.")
+  private long startIndex;
+
+  @Option(names = {"-l", "--numKeyLimit"},
+      description = "Max number of key to write.")
+  private long keyLimit;
 
   private final AtomicLong writeKeyNamePointer;
 
@@ -71,23 +84,39 @@ public class OmWriteBenchmark extends AbstractOmBenchmark
     this.keyNamePrefix = "";
     this.writerThreads = 10;
     this.writeKeyNamePointer = new AtomicLong(0);
+    this.startIndex = 0;
+    this.keyLimit = Long.MAX_VALUE;
+    this.bucketLimit = 1;
   }
 
   public void execute() {
     try {
-      keyNamePrefix += UUID.randomUUID().toString();
+      if (StringUtils.isEmpty(keyNamePrefix)) {
+        keyNamePrefix += UUID.randomUUID().toString();
+      }
+      if (startIndex > 0) {
+        this.writeKeyNamePointer.set(startIndex);
+        if (keyLimit != Long.MAX_VALUE) {
+          keyLimit += startIndex;
+        }
+      }
+
       System.out.println("Benchmarking OzoneManager Write.");
+      System.out.println("Start from key " + keyNamePrefix + "-" +
+          writeKeyNamePointer.get());
       final long endTimeInNs = getIoStats().getStartTime() + (runtime * 1000000000L);
       createVolume(user, volume);
-      createBucket(volume, bucket);
-
       ExecutorService writeExecutor = Executors.newFixedThreadPool(writerThreads);
-      for (int i = 0; i < this.writerThreads; i++) {
-        writeExecutor.submit(() -> {
-          while (System.nanoTime() < endTimeInNs) {
-            writeKey(volume, bucket, getKeyNameToWrite());
-          }
-        });
+      for(int i = 0; i < bucketLimit; i++) {
+        final String bucketName = bucket + i;
+        createBucket(volume, bucketName);
+        for (int j = 0; j < this.writerThreads/bucketLimit; j++) {
+          writeExecutor.submit(() -> {
+            while (System.nanoTime() < endTimeInNs && writeKeyNamePointer.get() < keyLimit) {
+              writeKey(volume, bucketName, getKeyNameToWrite());
+            }
+          });
+        }
       }
 
       ScheduledExecutorService statsThread = Executors.newSingleThreadScheduledExecutor();

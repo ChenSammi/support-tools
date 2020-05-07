@@ -16,22 +16,18 @@
 
 package org.preta.tools.ozone.benchmark.om;
 
-import org.apache.hadoop.ozone.client.OzoneClient;
-import org.apache.hadoop.ozone.client.OzoneClientFactory;
-import org.apache.hadoop.ozone.client.OzoneKey;
-
 import org.preta.tools.ozone.ReadableTimestampConverter;
+import org.preta.tools.ozone.benchmark.IoStats;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.text.DecimalFormat;
+import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Command(name = "read",
     description = "Benchmark OzoneManager Read.",
@@ -61,62 +57,68 @@ public class OmReadBenchmark  extends AbstractOmBenchmark {
       description = "Number of reader threads.")
   private int readerThreads;
 
-  private List<String> keyNames;
+  @Option(names = {"-l", "--numKeyLimit"},
+      description = "Max number of key to read.")
+  private long keyLimit;
+
+  private final AtomicLong readKeyNamePointer;
 
   public OmReadBenchmark() {
     this.volume = "instagram";
     this.bucket = "images";
     this.keyNamePrefix = "";
     this.readerThreads = 10;
+    this.readKeyNamePointer = new AtomicLong(0);
+    this.keyLimit = Long.MAX_VALUE;
   }
 
   public void execute() {
     try {
       System.out.println("Benchmarking OzoneManager Read.");
-      keyNames = getInputKeyNames();
-      System.out.println("Found " + keyNames.size() + " keys with prefix '" + keyNamePrefix + "'.");
-      try {
-        final long endTimeInNs = System.nanoTime() + runtime * 1000000000L;
-        final ExecutorService executor = Executors.newFixedThreadPool(readerThreads);
-        for (int i = 0; i < readerThreads; i++) {
-          executor.submit(() -> {
-            while (System.nanoTime() < endTimeInNs) {
-              readKey(volume, bucket, getKeyName());
-            }
-          });
-        }
-        executor.shutdown();
-        executor.awaitTermination(Integer.MAX_VALUE, TimeUnit.MINUTES);
-      } finally {
-        System.out.println("Stopping...");
+
+      final long endTimeInNs = System.nanoTime() + runtime * 1000000000L;
+      final ExecutorService executor = Executors.newFixedThreadPool(readerThreads);
+      for (int i = 0; i < readerThreads; i++) {
+        executor.submit(() -> {
+          while (System.nanoTime() < endTimeInNs && readKeyNamePointer.get() < keyLimit) {
+            readKey(volume, bucket, getKeyNameToRead());
+          }
+        });
       }
+
+      ScheduledExecutorService statsThread = Executors.newSingleThreadScheduledExecutor();
+      statsThread.scheduleAtFixedRate(this::printStats, 5, 5, TimeUnit.MINUTES);
+
+      executor.shutdown();
+      executor.awaitTermination(Integer.MAX_VALUE, TimeUnit.MINUTES);
+      statsThread.shutdown();
+      statsThread.awaitTermination(Integer.MAX_VALUE, TimeUnit.MINUTES);
+
     } catch (Exception ex) {
       System.err.println("Encountered Exception:");
       ex.printStackTrace();
     }
   }
 
-  private List<String> getInputKeyNames() throws IOException {
-    final List<String> keys = new ArrayList<>();
-    final OzoneClient client = OzoneClientFactory.getClient(getConfig());
-    final Iterator<? extends OzoneKey> iter = client.getObjectStore()
-        .getVolume(volume)
-        .getBucket(bucket)
-        .listKeys(keyNamePrefix);
-
-    while (iter.hasNext()) {
-      keys.add(iter.next().getName());
-    }
-    return keys;
+  private String getKeyNameToRead() {
+    return keyNamePrefix + "-" + readKeyNamePointer.incrementAndGet();
   }
 
-  private String getKeyName() {
-    return keyNames.get(ThreadLocalRandom.current().nextInt(keyNames.size()));
-  }
+
 
   public void printStats() {
-
+    final DecimalFormat df = new DecimalFormat("#.0000");
+    final IoStats stats = getIoStats();
+    System.out.println("================================================================");
+    System.out.println(LocalDateTime.now());
+    System.out.println("================================================================");
+    System.out.println("Time elapsed: " + (stats.getElapsedTime() / 1000000000) + " sec.");
+    System.out.println("Number of Threads: " + readerThreads);
+    System.out.println("Number of Keys read: " + stats.getKeysRead());
+    System.out.println("Average Key read time (CPU Time): " + df.format(stats.getAverageKeyReadCpuTime() / 1000000) + " milliseconds. ");
+    System.out.println("Average Key read time (Real): " + df.format((stats.getAverageKeyReadCpuTime() / readerThreads) / 1000000 ) + " milliseconds. ");
+    System.out.println("Max Key read time (CPU Time): " + stats.getMaxKeyReadTime() / 1000000 + " milliseconds.");
+    System.out.println("****************************************************************");
   }
-
 }
 

@@ -162,8 +162,12 @@ public abstract class AbstractOmBenchmark implements Runnable {
           .setType(HddsProtos.ReplicationType.RATIS)
           .setFactor(HddsProtos.ReplicationFactor.THREE)
           .build();
+      final long startTime = System.nanoTime();
       final OmKeyInfo keyInfo = client.lookupKey(keyArgs);
       assert keyInfo != null;
+      final long readTime = System.nanoTime() - startTime;
+      ioStats.addKeyReadCpuTime(readTime);
+      ioStats.setMaxKeyReadTime(readTime);
       ioStats.incrKeysRead();
     } catch (IOException ex) {
       System.err.println("Encountered Exception while reading key:");
@@ -171,4 +175,22 @@ public abstract class AbstractOmBenchmark implements Runnable {
     }
   }
 
+  void deleteKey(String volume, String bucket, String key) {
+    try {
+      final OmKeyArgs keyArgs = new OmKeyArgs.Builder()
+          .setVolumeName(volume)
+          .setBucketName(bucket)
+          .setKeyName(key)
+          .build();
+      final long startTime = System.nanoTime();
+      client.deleteKey(keyArgs);
+      final long deleteTime = System.nanoTime() - startTime;
+      ioStats.addKeyDeleteCpuTime(deleteTime);
+      ioStats.setMaxKeyDeleteTime(deleteTime);
+      ioStats.incrKeysDeleted();
+    } catch (IOException ex) {
+      System.err.println("Encountered Exception while deleting key:");
+      ex.printStackTrace();
+    }
+  }
 }

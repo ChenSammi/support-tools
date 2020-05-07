@@ -34,6 +34,13 @@ public class IoStats {
 
   // Read metrics.
   private final AtomicLong keysRead = new AtomicLong(0);
+  private final AtomicDouble keyReadCpuTime = new AtomicDouble(0);
+  private final AtomicLong maxKeyReadTime = new AtomicLong(0);
+
+  // Delete metrics.
+  private final AtomicLong keysDeleted = new AtomicLong(0);
+  private final AtomicDouble keyDeleteCpuTime = new AtomicDouble(0);
+  private final AtomicLong maxKeyDeleteTime = new AtomicLong(0);
 
   public long getStartTime() {
     return startTime;
@@ -51,8 +58,20 @@ public class IoStats {
     return keysCreated.get();
   }
 
+  public long getKeysDeleted() {
+    return keysDeleted.get();
+  }
+
   public void addKeyWriteCpuTime(long writeTime) {
     keyWriteCpuTime.getAndAdd(writeTime);
+  }
+
+  public void addKeyReadCpuTime(long readTime) {
+    keyReadCpuTime.getAndAdd(readTime);
+  }
+
+  public void addKeyDeleteCpuTime(long deleteTime) {
+    keyDeleteCpuTime.getAndAdd(deleteTime);
   }
 
   public double getKeyWriteCpuTime() {
@@ -61,6 +80,14 @@ public class IoStats {
 
   public double getAverageKeyWriteCpuTime() {
     return keyWriteCpuTime.get() / keysCreated.get();
+  }
+
+  public double getAverageKeyReadCpuTime() {
+    return keyReadCpuTime.get() / keysRead.get();
+  }
+
+  public double getAverageKeyDeleteCpuTime() {
+    return keyDeleteCpuTime.get() / keysDeleted.get();
   }
 
   public void setMaxKeyWriteTime(long keyWriteTime) {
@@ -72,12 +99,42 @@ public class IoStats {
     }
   }
 
+  public void setMaxKeyReadTime(long keyReadTime) {
+    while(true) {
+      final long oldTime = maxKeyReadTime.get();
+      if(oldTime >= keyReadTime || maxKeyReadTime.compareAndSet(oldTime, keyReadTime)) {
+        return;
+      }
+    }
+  }
+
+  public void setMaxKeyDeleteTime(long keyDeleteTime) {
+    while(true) {
+      final long oldTime = maxKeyDeleteTime.get();
+      if(oldTime >= keyDeleteTime || maxKeyDeleteTime.compareAndSet(oldTime, keyDeleteTime)) {
+        return;
+      }
+    }
+  }
+
   public long getMaxKeyWriteTime() {
     return maxKeyWriteTime.get();
   }
 
+  public long getMaxKeyReadTime() {
+    return maxKeyReadTime.get();
+  }
+
+  public long getMaxKeyDeleteTime() {
+    return maxKeyDeleteTime.get();
+  }
+
   public void incrKeysRead() {
     keysRead.incrementAndGet();
+  }
+
+  public void incrKeysDeleted() {
+    keysDeleted.incrementAndGet();
   }
 
   public long getKeysRead() {
